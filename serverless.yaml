@@ -1,0 +1,164 @@
+service: poc-sls-step-function
+
+provider:
+  name: aws
+  runtime: nodejs18.x
+  region: us-east-1
+  environment:
+    S3_BUCKET_NAME: ${env:BUCKET_NAME}
+    DYNAMODB_TABLE_NAME: ${env:DYNAMO_TABLE_NAME}
+
+resources:
+  Resources:
+    MyS3Bucket:
+      Type: AWS::S3::Bucket
+      Properties:
+        BucketName: ${env:BUCKET_NAME}
+    MyDynamoDBTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${env:DYNAMO_TABLE_NAME}
+        AttributeDefinitions:
+          - AttributeName: id
+            AttributeType: S
+        KeySchema:
+          - AttributeName: id
+            KeyType: HASH
+        BillingMode: PAY_PER_REQUEST
+    MyECRRepository:
+      Type: AWS::ECR::Repository
+      Properties:
+        RepositoryName: poc-sls-step-function-repo
+    MyECSCluster:
+      Type: AWS::ECS::Cluster
+      Properties:
+        ClusterName: poc-sls-step-function-cluster
+    MyECSTaskExecutionRole:
+      Type: AWS::IAM::Role
+      Properties:
+        AssumeRolePolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Principal:
+                Service:
+                  - ecs-tasks.amazonaws.com
+              Action:
+                - sts:AssumeRole
+        Policies:
+          - PolicyName: ecsTaskExecutionPolicy
+            PolicyDocument:
+              Version: '2012-10-17'
+              Statement:
+                - Effect: Allow
+                  Action:
+                    - '*'
+                  Resource: '*'
+    MyECSTaskDefinition:
+      Type: AWS::ECS::TaskDefinition
+      Properties:
+        Family: poc-sls-step-function-task
+        Cpu: '256'
+        Memory: '512'
+        NetworkMode: awsvpc
+        RequiresCompatibilities:
+          - FARGATE
+        ExecutionRoleArn:
+          Fn::GetAtt:
+            - MyECSTaskExecutionRole
+            - Arn
+        ContainerDefinitions:
+          - Name: chunker
+            Image: ${opt:imageURL, 'default-image-url'}
+            Essential: true
+            Environment:
+              - Name: BUCKET_NAME
+                Value: ${env:BUCKET_NAME}
+              - Name: DYNAMO_TABLE_NAME
+                Value: ${env:DYNAMO_TABLE_NAME}
+            LogConfiguration:
+              LogDriver: awslogs
+              Options:
+                awslogs-group: /ecs/poc-sls-step-function
+                awslogs-region: ${self:provider.region}
+                awslogs-stream-prefix: ecs
+    MyStateMachineRole:
+      Type: AWS::IAM::Role
+      Properties:
+        AssumeRolePolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Principal:
+                Service:
+                  - states.amazonaws.com
+              Action:
+                - sts:AssumeRole
+        Policies:
+          - PolicyName: stepFunctionsPolicy
+            PolicyDocument:
+              Version: '2012-10-17'
+              Statement:
+                - Effect: Allow
+                  Action:
+                    - '*'
+                  Resource: '*'
+    MyStateMachine:
+      Type: AWS::StepFunctions::StateMachine
+      Properties:
+        StateMachineName: ChunkerStateMachine
+        RoleArn:
+          Fn::GetAtt:
+            - MyStateMachineRole
+            - Arn
+        DefinitionString:
+          Fn::Sub:
+            - |
+              {
+                "Comment": "State machine to run ECS chunker task",
+                "StartAt": "RunChunkerTask",
+                "States": {
+                  "RunChunkerTask": {
+                    "Type": "Task",
+                    "Resource": "arn:aws:states:::ecs:runTask.sync",
+                    "Parameters": {
+                      "Cluster": "${MyECSCluster}",
+                      "TaskDefinition": "${MyECSTaskDefinition}",
+                      "LaunchType": "FARGATE",
+                      "NetworkConfiguration": {
+                        "AwsvpcConfiguration": {
+                          "Subnets": [
+                            "subnet-00067f75cd27507ec"
+                          ],
+                          "AssignPublicIp": "ENABLED"
+                        }
+                      },
+                      "Overrides": {
+                        "ContainerOverrides": [
+                          {
+                            "Name": "chunker",
+                            "Environment": [
+                              {
+                                "Name": "BUCKET_NAME",
+                                "Value.$": "$.bucketName"
+                              },
+                              {
+                                "Name": "DYNAMO_TABLE_NAME",
+                                "Value.$": "$.dynamoTableName"
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    },
+                    "End": true
+                  }
+                }
+              }
+            - MyECSCluster: ${MyECSCluster}
+              MyECSTaskDefinition: ${MyECSTaskDefinition}
+
+
+plugins:
+  - serverless-dotenv-plugin
+  - serverless-scriptable-plugin

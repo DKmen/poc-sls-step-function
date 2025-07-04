@@ -63,5 +63,8 @@ jobs:
         run: npx serverless login --token ${{ secrets.SERVERLESS_ACCESS_KEY }}
 
       - name: Deploy step function
-        run: |
-          serverless deploy --param="imageURL=${{ secrets.ECR_REPOSITORY }}:${{ github.sha }}"
+        uses: serverless/github-action@v3.2
+        with:
+          args: deploy --param="imageURL=${{ secrets.ECR_REPOSITORY }}:${{ github.sha }}"
+        env:
+          SERVERLESS_ACCESS_KEY: ${{ secrets.SERVERLESS_ACCESS_KEY }}

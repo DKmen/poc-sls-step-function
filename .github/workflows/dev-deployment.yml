@@ -34,9 +34,9 @@ jobs:
         run: |
           docker build -t ${{ secrets.ECR_REPOSITORY }}:${{ github.sha }} .
 
-          - name: Push Docker image to ECR
-            run: |
-              docker push ${{ secrets.ECR_REPOSITORY }}:${{ github.sha }}
+      - name: Push Docker image to ECR
+        run: |
+          docker push ${{ secrets.ECR_REPOSITORY }}:${{ github.sha }}
     
   deploy-step-function:
     runs-on: ubuntu-latest

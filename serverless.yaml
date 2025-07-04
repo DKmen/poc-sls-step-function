@@ -5,19 +5,19 @@ provider:
   runtime: nodejs18.x
   region: us-east-1
   environment:
-    S3_BUCKET_NAME: ${opt:BUCKET_NAME}
-    DYNAMODB_TABLE_NAME: ${opt:DYNAMO_TABLE_NAME}
+    S3_BUCKET_NAME: ${env:BUCKET_NAME}
+    DYNAMODB_TABLE_NAME: ${env:DYNAMO_TABLE_NAME}
 
 resources:
   Resources:
     MyS3Bucket:
       Type: AWS::S3::Bucket
       Properties:
-        BucketName: ${opt:BUCKET_NAME}
+        BucketName: ${env:BUCKET_NAME}
     MyDynamoDBTable:
       Type: AWS::DynamoDB::Table
       Properties:
-        TableName: ${opt:DYNAMO_TABLE_NAME}
+        TableName: ${env:DYNAMO_TABLE_NAME}
         AttributeDefinitions:
           - AttributeName: id
             AttributeType: S
@@ -69,13 +69,13 @@ resources:
             - Arn
         ContainerDefinitions:
           - Name: chunker
-            Image: ${opt:imageURL, 'default-image-url'}
+            Image: ${env:IMAGE_URL, 'default-image-url'}
             Essential: true
             Environment:
               - Name: BUCKET_NAME
-                Value: ${opt:BUCKET_NAME}
+                Value: ${env:BUCKET_NAME}
               - Name: DYNAMO_TABLE_NAME
-                Value: ${opt:DYNAMO_TABLE_NAME}
+                Value: ${env:DYNAMO_TABLE_NAME}
             LogConfiguration:
               LogDriver: awslogs
               Options:

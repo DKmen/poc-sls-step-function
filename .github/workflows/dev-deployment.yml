@@ -58,10 +58,6 @@ jobs:
       - name: Install project dependencies
         run: |
           npm ci
-      
-      - name: Serverless login
-        run: npx serverless login --token ${{ secrets.SERVERLESS_ACCESS_KEY }}
-
       - name: Deploy step function
         uses: serverless/github-action@v3.2
         with:

@@ -38,12 +38,14 @@ jobs:
         run: |
           docker push ${{ secrets.ECR_REPOSITORY }}:${{ github.sha }}
     outputs:
-        image-url: '${{ secrets.ECR_REPOSITORY }}:${{ github.sha }}'
+        IMAGE_URL: '${{ secrets.ECR_REPOSITORY }}:${{ github.sha }}'
 
   deploy-step-function:
     runs-on: ubuntu-latest
     needs: build-and-push-image
     steps:
+      - run: echo "Image URL: ${{ needs.build-and-push-image.outputs.IMAGE_URL }}"
+      
       - name: Checkout code
         uses: actions/checkout@v2
 
@@ -68,4 +70,4 @@ jobs:
           SERVERLESS_ACCESS_KEY: ${{ secrets.SERVERLESS_ACCESS_KEY }}
           BUCKET_NAME: ${{ secrets.BUCKET_NAME }}
           DYNAMO_TABLE_NAME: ${{ secrets.DYNAMO_TABLE_NAME }}
-          IMAGE_URL: ${{ needs.build-and-push-image.outputs.image-url }}
+          IMAGE_URL: ${{ needs.build-and-push-image.outputs.IMAGE_URL }}

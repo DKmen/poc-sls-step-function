@@ -43,7 +43,9 @@ jobs:
       - name: Export IMAGE_URL
         id: export
         run: |
-          echo "IMAGE_URL=${{ secrets.ECR_REPOSITORY }}:${{ github.sha }}" >> $GITHUB_OUTPUT
+          IMAGE_URL="${{ secrets.ECR_REPOSITORY }}:${{ github.sha }}"
+          echo "IMAGE_URL=${IMAGE_URL}" >> $GITHUB_OUTPUT
+          echo "Setting IMAGE_URL to: ${IMAGE_URL}"
 
   deploy-step-function:
     runs-on: ubuntu-latest
@@ -72,7 +74,7 @@ jobs:
       - name: Deploy step function
         uses: serverless/github-action@v3.2
         with:
-          args: deploy 
+          args: deploy --verbose
         env:
           SERVERLESS_ACCESS_KEY: ${{ secrets.SERVERLESS_ACCESS_KEY }}
           BUCKET_NAME: ${{ secrets.BUCKET_NAME }}

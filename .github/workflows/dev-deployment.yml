@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - main
-  
   pull_request:
     branches:
       - feature/*
@@ -17,7 +16,8 @@ jobs:
   build-and-push-image:
     runs-on: ubuntu-latest
     outputs:
-      IMAGE_URL: ${{ steps.export.outputs.IMAGE_URL }}
+      IMAGE_URL: ${{ steps.export-image-url.outputs.IMAGE_URL }}
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
@@ -41,11 +41,9 @@ jobs:
           docker push ${{ secrets.ECR_REPOSITORY }}:${{ github.sha }}
 
       - name: Export IMAGE_URL
-        id: export
+        id: export-image-url
         run: |
-          IMAGE_URL="${{ secrets.ECR_REPOSITORY }}:${{ github.sha }}"
-          echo "IMAGE_URL=${IMAGE_URL}" >> $GITHUB_OUTPUT
-          echo "Setting IMAGE_URL to: ${IMAGE_URL}"
+          echo "IMAGE_URL=${{ secrets.ECR_REPOSITORY }}:${{ github.sha }}" >> $GITHUB_OUTPUT
 
   deploy-step-function:
     runs-on: ubuntu-latest

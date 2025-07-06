@@ -45,11 +45,11 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v2
 
-      # - name: Configure AWS credentials (OIDC)
-      #   uses: aws-actions/configure-aws-credentials@v4
-      #   with:
-      #     role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }} # Ensure this secret is defined in your repository settings
-      #     aws-region: ${{ secrets.AWS_REGION }}
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }} # Ensure this secret is defined in your repository settings
+          aws-region: ${{ secrets.AWS_REGION }}
 
       - name: Install Serverless Framework
         run: |

@@ -44,8 +44,6 @@ jobs:
     runs-on: ubuntu-latest
     needs: build-and-push-image
     steps:
-      - run: echo "Image URL: ${{ needs.build-and-push-image.outputs.IMAGE_URL }}"
-      
       - name: Checkout code
         uses: actions/checkout@v2
 

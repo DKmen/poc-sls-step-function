@@ -12,12 +12,12 @@ permissions:
   id-token: write
   contents: read
 
+env:
+  ECR_IMAGE: '${{ secrets.ECR_REPOSITORY }}:${{ github.sha }}'
+
 jobs:
   build-and-push-image:
     runs-on: ubuntu-latest
-    outputs:
-      IMAGE_URL: ${{ steps.export-image-url.outputs.IMAGE_URL }}
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
@@ -34,16 +34,11 @@ jobs:
 
       - name: Build Docker image
         run: |
-          docker build -t ${{ secrets.ECR_REPOSITORY }}:${{ github.sha }} .
+          docker build -t ${{ env.ECR_IMAGE }} .
 
       - name: Push Docker image to ECR
         run: |
-          docker push ${{ secrets.ECR_REPOSITORY }}:${{ github.sha }}
-
-      - name: Export IMAGE_URL
-        id: export-image-url
-        run: |
-          echo "IMAGE_URL=${{ secrets.ECR_REPOSITORY }}:${{ github.sha }}" >> $GITHUB_OUTPUT
+          docker push ${{ env.ECR_IMAGE }}
 
   deploy-step-function:
     runs-on: ubuntu-latest
@@ -66,9 +61,6 @@ jobs:
         run: |
           npm ci
 
-      - name: Debug image URL
-        run: echo "IMAGE_URL = ${{ needs.build-and-push-image.outputs.IMAGE_URL }}"
-
       - name: Deploy step function
         uses: serverless/github-action@v3.2
         with:
@@ -77,4 +69,4 @@ jobs:
           SERVERLESS_ACCESS_KEY: ${{ secrets.SERVERLESS_ACCESS_KEY }}
           BUCKET_NAME: ${{ secrets.BUCKET_NAME }}
           DYNAMO_TABLE_NAME: ${{ secrets.DYNAMO_TABLE_NAME }}
-          IMAGE_URL: ${{ needs.build-and-push-image.outputs.IMAGE_URL }}
+          IMAGE_URL: ${{ env.ECR_IMAGE }}

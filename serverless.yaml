@@ -2,11 +2,19 @@ service: poc-sls-step-function
 
 provider:
   name: aws
-  runtime: nodejs18.x
+  runtime: nodejs20.x
   region: us-east-1
   environment:
     S3_BUCKET_NAME: ${env:BUCKET_NAME}
     DYNAMODB_TABLE_NAME: ${env:DYNAMO_TABLE_NAME}
+
+functions:
+  fileProcessor:
+    handler: src/apps/transformer/index.handler
+    runtime: nodejs20.x
+    environment:
+      BUCKET_NAME: ${env:BUCKET_NAME}
+      DYNAMO_TABLE_NAME: ${env:DYNAMO_TABLE_NAME}
 
 resources:
   Resources:
@@ -14,6 +22,10 @@ resources:
       Type: AWS::S3::Bucket
       Properties:
         BucketName: ${env:BUCKET_NAME}
+        NotificationConfiguration:
+          EventBridgeConfiguration:
+            EventBridgeEnabled: true
+    
     MyDynamoDBTable:
       Type: AWS::DynamoDB::Table
       Properties:
@@ -25,64 +37,9 @@ resources:
           - AttributeName: id
             KeyType: HASH
         BillingMode: PAY_PER_REQUEST
-    MyECRRepository:
-      Type: AWS::ECR::Repository
-      Properties:
-        RepositoryName: poc-sls-step-function-repo
-    MyECSCluster:
-      Type: AWS::ECS::Cluster
-      Properties:
-        ClusterName: poc-sls-step-function-cluster
-    MyECSTaskExecutionRole:
-      Type: AWS::IAM::Role
-      Properties:
-        AssumeRolePolicyDocument:
-          Version: '2012-10-17'
-          Statement:
-            - Effect: Allow
-              Principal:
-                Service:
-                  - ecs-tasks.amazonaws.com
-              Action:
-                - sts:AssumeRole
-        Policies:
-          - PolicyName: ecsTaskExecutionPolicy
-            PolicyDocument:
-              Version: '2012-10-17'
-              Statement:
-                - Effect: Allow
-                  Action:
-                    - '*'
-                  Resource: '*'
-    MyECSTaskDefinition:
-      Type: AWS::ECS::TaskDefinition
-      Properties:
-        Family: poc-sls-step-function-task
-        Cpu: '256'
-        Memory: '512'
-        NetworkMode: awsvpc
-        RequiresCompatibilities:
-          - FARGATE
-        ExecutionRoleArn:
-          Fn::GetAtt:
-            - MyECSTaskExecutionRole
-            - Arn
-        ContainerDefinitions:
-          - Name: chunker
-            Image: ${env:IMAGE_URL, 'default-image-url'}
-            Essential: true
-            Environment:
-              - Name: BUCKET_NAME
-                Value: ${env:BUCKET_NAME}
-              - Name: DYNAMO_TABLE_NAME
-                Value: ${env:DYNAMO_TABLE_NAME}
-            LogConfiguration:
-              LogDriver: awslogs
-              Options:
-                awslogs-group: /ecs/poc-sls-step-function
-                awslogs-region: ${self:provider.region}
-                awslogs-stream-prefix: ecs
-    MyStateMachineRole:
+
+    # IAM Role for Step Functions
+    StepFunctionsRole:
       Type: AWS::IAM::Role
       Properties:
         AssumeRolePolicyDocument:
@@ -94,70 +51,108 @@ resources:
                   - states.amazonaws.com
               Action:
                 - sts:AssumeRole
+
         Policies:
-          - PolicyName: stepFunctionsPolicy
+          - PolicyName: StepFunctionsExecutionPolicy
             PolicyDocument:
               Version: '2012-10-17'
               Statement:
                 - Effect: Allow
                   Action:
-                    - '*'
+                    - lambda:InvokeFunction
+                    - s3:GetObject
+                    - dynamodb:PutItem
+                    - dynamodb:GetItem
+                    - dynamodb:UpdateItem
                   Resource: '*'
-    MyStateMachine:
+
+    # Step Function State Machine
+    FileProcessingStateMachine:
       Type: AWS::StepFunctions::StateMachine
       Properties:
-        StateMachineName: ChunkerStateMachine
+        StateMachineName: FileProcessingStateMachine
         RoleArn:
           Fn::GetAtt:
-            - MyStateMachineRole
+            - StepFunctionsRole
             - Arn
         DefinitionString:
-          Fn::Sub:
-            - |
-              {
-                "Comment": "State machine to run ECS chunker task",
-                "StartAt": "RunChunkerTask",
-                "States": {
-                  "RunChunkerTask": {
-                    "Type": "Task",
-                    "Resource": "arn:aws:states:::ecs:runTask.sync",
-                    "Parameters": {
-                      "Cluster": "${MyECSCluster}",
-                      "TaskDefinition": "${MyECSTaskDefinition}",
-                      "LaunchType": "FARGATE",
-                      "NetworkConfiguration": {
-                        "AwsvpcConfiguration": {
-                          "Subnets": [
-                            "subnet-00067f75cd27507ec"
-                          ],
-                          "AssignPublicIp": "ENABLED"
-                        }
-                      },
-                      "Overrides": {
-                        "ContainerOverrides": [
-                          {
-                            "Name": "chunker",
-                            "Environment": [
-                              {
-                                "Name": "BUCKET_NAME",
-                                "Value.$": "$.bucketName"
-                              },
-                              {
-                                "Name": "DYNAMO_TABLE_NAME",
-                                "Value.$": "$.dynamoTableName"
-                              }
-                            ]
-                          }
-                        ]
-                      }
-                    },
-                    "End": true
-                  }
+          Fn::Sub: |
+            {
+              "Comment": "Process file uploaded to S3",
+              "StartAt": "ProcessFile",
+              "States": {
+                "ProcessFile": {
+                  "Type": "Task",
+                  "Resource": "${fileProcessorLambdaFunction.Arn}",
+                  "Parameters": {
+                    "bucketName.$": "$.detail.bucket.name",
+                    "objectKey.$": "$.detail.object.key",
+                    "eventTime.$": "$.time"
+                  },
+                  "Next": "FileProcessed"
+                },
+                "FileProcessed": {
+                  "Type": "Succeed",
+                  "Result": "File processing completed successfully"
                 }
               }
-            - MyECSCluster: ${MyECSCluster}
-              MyECSTaskDefinition: ${MyECSTaskDefinition}
+            }
+    
+        # IAM Role for EventBridge to invoke Step Functions
+    EventBridgeRole:
+      Type: AWS::IAM::Role
+      Properties:
+        AssumeRolePolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Principal:
+                Service:
+                  - events.amazonaws.com
+              Action:
+                - sts:AssumeRole
+        Policies:
+          - PolicyName: EventBridgeExecutionPolicy
+            PolicyDocument:
+              Version: '2012-10-17'
+              Statement:
+                - Effect: Allow
+                  Action:
+                    - states:StartExecution
+                  Resource:
+                    Fn::GetAtt:
+                      - FileProcessingStateMachine
+                      - Arn
 
+    # EventBridge Rule to trigger Step Function on S3 upload
+    S3UploadEventRule:
+      Type: AWS::Events::Rule
+      Properties:
+        RoleArn:
+          Fn::GetAtt:
+            - EventBridgeRole
+            - Arn
+        Description: "Trigger Step Function when file is uploaded to S3"
+        EventPattern:
+          source:
+            - "aws.s3"
+          detail-type:
+            - "Object Created"
+          detail:
+            bucket:
+              name:
+                - ${self:resources.Resources.MyS3Bucket.Properties.BucketName}
+        State: ENABLED
+        Targets:
+          - Arn:
+              Fn::GetAtt:
+                - FileProcessingStateMachine
+                - Arn
+            Id: "FileProcessingTarget"
+            RoleArn:
+              Fn::GetAtt:
+                - EventBridgeRole
+                - Arn
 
 plugins:
   - serverless-dotenv-plugin

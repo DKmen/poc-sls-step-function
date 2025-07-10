@@ -76,27 +76,31 @@ resources:
             - StepFunctionsRole
             - Arn
         DefinitionString:
-          Fn::Sub: |
-            {
-              "Comment": "Process file uploaded to S3",
-              "StartAt": "ProcessFile",
-              "States": {
-                "ProcessFile": {
-                  "Type": "Task",
-                  "Resource": "${fileProcessorLambdaFunction.Arn}",
-                  "Parameters": {
-                    "bucketName.$": "$.detail.bucket.name",
-                    "objectKey.$": "$.detail.object.key",
-                    "eventTime.$": "$.time"
+          Fn::Sub:
+            - |
+              {
+                "Comment": "Process file uploaded to S3",
+                "StartAt": "ProcessFile",
+                "States": {
+                  "ProcessFile": {
+                    "Type": "Task",
+                    "Resource": "${FileProcessorArn}",
+                    "Parameters": {
+                      "bucketName.$": "$.detail.bucket.name",
+                      "objectKey.$": "$.detail.object.key",
+                      "eventTime.$": "$.time"
+                    },
+                    "Next": "FileProcessed"
                   },
-                  "Next": "FileProcessed"
-                },
-                "FileProcessed": {
-                  "Type": "Succeed",
-                  "Result": "File processing completed successfully"
+                  "FileProcessed": {
+                    "Type": "Succeed"
+                  }
                 }
               }
-            }
+            - FileProcessorArn:
+                Fn::GetAtt:
+                  - FileProcessorLambdaFunction
+                  - Arn
     
         # IAM Role for EventBridge to invoke Step Functions
     EventBridgeRole:
